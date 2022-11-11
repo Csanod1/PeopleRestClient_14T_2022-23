@@ -1,15 +1,26 @@
 package com.darkbeast0106.peoplerestclient;
 
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.text.method.ScrollingMovementMethod;
+import android.view.LayoutInflater;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.ListView;
 import android.widget.TextView;
 
+import com.google.gson.Gson;
+
 import java.io.IOException;
+import java.util.Arrays;
+import java.util.List;
 
 public class MainActivity extends AppCompatActivity {
     private EditText nameInput;
@@ -17,6 +28,7 @@ public class MainActivity extends AppCompatActivity {
     private EditText ageInput;
     private Button submitButton;
     private TextView peopleTextview;
+    private ListView peopleListView;
     private String base_url = "https://retoolapi.dev/cRJhEP/people";
 
     private class RequestTask extends AsyncTask<Void, Void, Response> {
@@ -69,8 +81,11 @@ public class MainActivity extends AppCompatActivity {
             super.onPostExecute(response);
             switch (requestMethod){
                 case "GET":
-                    String people = response.getContent();
-                    peopleTextview.setText(people);
+                    String content = response.getContent();
+                    Gson converter = new Gson();
+                    List<Person> people = Arrays.asList(converter.fromJson(content, Person[].class));
+                    PeopleAdapter adapter = new PeopleAdapter(people);
+                    peopleListView.setAdapter(adapter);
                     break;
                 case "POST":
                     if (response.getResponseCode() == 201) {
@@ -107,6 +122,35 @@ public class MainActivity extends AppCompatActivity {
         ageInput = findViewById(R.id.ageInput);
         submitButton = findViewById(R.id.submitButton);
         peopleTextview = findViewById(R.id.textPeople);
+        peopleListView = findViewById(R.id.peopleListView);
         peopleTextview.setMovementMethod(new ScrollingMovementMethod());
+    }
+
+    private class PeopleAdapter extends ArrayAdapter<Person> {
+        private List<Person> people;
+
+        public PeopleAdapter(List<Person> objects) {
+            super(MainActivity.this, R.layout.person_list_item, objects);
+            people = objects;
+        }
+
+        @NonNull
+        @Override
+        public View getView(int position, @Nullable View convertView, @NonNull ViewGroup parent) {
+            LayoutInflater inflater = getLayoutInflater();
+            View view = inflater.inflate(R.layout.person_list_item, null);
+            Person actualPerson = people.get(position);
+            TextView display = view.findViewById(R.id.display);
+            TextView update = view.findViewById(R.id.update);
+            TextView delete = view.findViewById(R.id.delete);
+            display.setText(actualPerson.toString());
+            update.setOnClickListener(v -> {
+                // TODO: display update form for item
+            });
+            delete.setOnClickListener(v -> {
+                // TODO: delete item using API
+            });
+            return view;
+        }
     }
 }
