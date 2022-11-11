@@ -7,6 +7,7 @@ import androidx.appcompat.app.AppCompatActivity;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.text.method.ScrollingMovementMethod;
+import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -17,6 +18,7 @@ import android.widget.ListView;
 import android.widget.TextView;
 
 import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
 
 import java.io.IOException;
 import java.util.Arrays;
@@ -84,6 +86,7 @@ public class MainActivity extends AppCompatActivity {
                     String content = response.getContent();
                     Gson converter = new Gson();
                     List<Person> people = Arrays.asList(converter.fromJson(content, Person[].class));
+                    Log.d("JSON fromJSON: ", people.get(0) + " " + people.get(0).getId());
                     PeopleAdapter adapter = new PeopleAdapter(people);
                     peopleListView.setAdapter(adapter);
                     break;
@@ -105,10 +108,13 @@ public class MainActivity extends AppCompatActivity {
         submitButton.setOnClickListener(view -> {
             String name = nameInput.getText().toString().trim();
             String email = emailInput.getText().toString().trim();
-            String age = ageInput.getText().toString().trim();
+            String ageText = ageInput.getText().toString().trim();
             // TODO: validate
-            String json = String.format("{\"name\": \"%s\", \"email\": \"%s\", \"age\": \"%s\"}",
-                    name, email, age);
+            int age = Integer.parseInt(ageText);
+            Person person = new Person(0, name, email, age);
+            Gson converter = new GsonBuilder().excludeFieldsWithoutExposeAnnotation().create();
+            String json = converter.toJson(person);
+            Log.d("JSON toJson: ", json);
             RequestTask task = new RequestTask(base_url, "POST", json);
             task.execute();
         });
