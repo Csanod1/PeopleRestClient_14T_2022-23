@@ -14,8 +14,11 @@ import android.view.ViewGroup;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.LinearLayout;
 import android.widget.ListView;
+import android.widget.ProgressBar;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -29,9 +32,14 @@ public class MainActivity extends AppCompatActivity {
     private EditText emailInput;
     private EditText ageInput;
     private Button submitButton;
-    private TextView peopleTextview;
+    private Button updateButton;
+    private Button cancelButton;
+    private Button createButton;
+    private LinearLayout personForm;
     private ListView peopleListView;
+    private ProgressBar progressBar;
     private String base_url = "https://retoolapi.dev/cRJhEP/people";
+    private int updateId;
 
     private class RequestTask extends AsyncTask<Void, Void, Response> {
         private String requestUrl;
@@ -65,7 +73,12 @@ public class MainActivity extends AppCompatActivity {
                     case "POST":
                         response = RequestHandler.post(requestUrl, requestBody);
                         break;
-
+                    case "PUT":
+                        response = RequestHandler.put(requestUrl, requestBody);
+                        break;
+                    case "DELETE":
+                        response = RequestHandler.delete(requestUrl);
+                        break;
                 }
             } catch (IOException e) {
                 e.printStackTrace();
@@ -76,11 +89,21 @@ public class MainActivity extends AppCompatActivity {
         @Override
         protected void onPreExecute() {
             super.onPreExecute();
+            progressBar.setVisibility(View.VISIBLE);
         }
 
         @Override
         protected void onPostExecute(Response response) {
             super.onPostExecute(response);
+            progressBar.setVisibility(View.GONE);
+            if (response == null) {
+                Toast.makeText(MainActivity.this, R.string.unable_to_connect, Toast.LENGTH_SHORT).show();
+                return;
+            }
+            if (response.getResponseCode() >= 400) {
+                Toast.makeText(MainActivity.this, response.getContent(), Toast.LENGTH_SHORT).show();
+                return;
+            }
             switch (requestMethod){
                 case "GET":
                     String content = response.getContent();
@@ -90,8 +113,9 @@ public class MainActivity extends AppCompatActivity {
                     PeopleAdapter adapter = new PeopleAdapter(people);
                     peopleListView.setAdapter(adapter);
                     break;
-                case "POST":
-                    if (response.getResponseCode() == 201) {
+                default:
+                    if (response.getResponseCode() >= 200 && response.getResponseCode() < 300) {
+                        cancelForm();
                         RequestTask task = new RequestTask(base_url);
                         task.execute();
                     }
@@ -105,21 +129,72 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         init();
-        submitButton.setOnClickListener(view -> {
-            String name = nameInput.getText().toString().trim();
-            String email = emailInput.getText().toString().trim();
-            String ageText = ageInput.getText().toString().trim();
-            // TODO: validate
-            int age = Integer.parseInt(ageText);
-            Person person = new Person(0, name, email, age);
-            Gson converter = new GsonBuilder().excludeFieldsWithoutExposeAnnotation().create();
-            String json = converter.toJson(person);
-            Log.d("JSON toJson: ", json);
-            RequestTask task = new RequestTask(base_url, "POST", json);
-            task.execute();
-        });
+        addListeners();
         RequestTask task = new RequestTask(base_url);
         task.execute();
+    }
+
+    private void addListeners() {
+        submitButton.setOnClickListener(view -> {
+            try {
+                String json = createJsonFromFormdata();
+                //Log.d("JSON toJson: ", json);
+                RequestTask task = new RequestTask(base_url, "POST", json);
+                task.execute();
+            } catch (IllegalArgumentException e) {
+                Toast.makeText(this, e.getMessage(), Toast.LENGTH_SHORT).show();
+            }
+        });
+
+        updateButton.setOnClickListener(view -> {
+            try {
+                String json = createJsonFromFormdata();
+                String url = base_url + "/" + updateId;
+                RequestTask task = new RequestTask(url, "PUT", json);
+                task.execute();
+            } catch (IllegalArgumentException e) {
+                Toast.makeText(this, e.getMessage(), Toast.LENGTH_SHORT).show();
+            }
+        });
+
+        cancelButton.setOnClickListener(view -> {
+            cancelForm();
+        });
+
+        createButton.setOnClickListener(view -> {
+            personForm.setVisibility(View.VISIBLE);
+            submitButton.setVisibility(View.VISIBLE);
+            updateButton.setVisibility(View.GONE);
+            createButton.setVisibility(View.GONE);
+        });
+    }
+
+    private String createJsonFromFormdata() {
+        String name = nameInput.getText().toString().trim();
+        String email = emailInput.getText().toString().trim();
+        String ageText = ageInput.getText().toString().trim();
+        if (name.isEmpty()){
+            throw new IllegalArgumentException("Name is required");
+        }
+        if (email.isEmpty()){
+            throw new IllegalArgumentException("Email is required");
+        }
+        if (ageText.isEmpty()){
+            throw new IllegalArgumentException("Age is required");
+        }
+        int age = Integer.parseInt(ageText);
+        Person person = new Person(0, name, email, age);
+        Gson converter = new GsonBuilder().excludeFieldsWithoutExposeAnnotation().create();
+        return converter.toJson(person);
+    }
+
+    private void cancelForm() {
+        updateId = 0;
+        nameInput.setText("");
+        emailInput.setText("");
+        ageInput.setText("");
+        personForm.setVisibility(View.GONE);
+        createButton.setVisibility(View.VISIBLE);
     }
 
     private void init() {
@@ -127,9 +202,15 @@ public class MainActivity extends AppCompatActivity {
         emailInput = findViewById(R.id.emailInput);
         ageInput = findViewById(R.id.ageInput);
         submitButton = findViewById(R.id.submitButton);
-        peopleTextview = findViewById(R.id.textPeople);
+        updateButton = findViewById(R.id.updateButton);
+        cancelButton = findViewById(R.id.cancelButton);
+        createButton = findViewById(R.id.createButton);
+        personForm = findViewById(R.id.personForm);
         peopleListView = findViewById(R.id.peopleListView);
-        peopleTextview.setMovementMethod(new ScrollingMovementMethod());
+        progressBar = findViewById(R.id.progressBar);
+
+//        TextView peopleTextview = findViewById(R.id.textPeople);
+//        peopleTextview.setMovementMethod(new ScrollingMovementMethod());
     }
 
     private class PeopleAdapter extends ArrayAdapter<Person> {
@@ -151,10 +232,20 @@ public class MainActivity extends AppCompatActivity {
             TextView delete = view.findViewById(R.id.delete);
             display.setText(actualPerson.toString());
             update.setOnClickListener(v -> {
-                // TODO: display update form for item
+                updateId = actualPerson.getId();
+                nameInput.setText(actualPerson.getName());
+                emailInput.setText(actualPerson.getEmail());
+                ageInput.setText(String.valueOf(actualPerson.getAge()));
+
+                personForm.setVisibility(View.VISIBLE);
+                submitButton.setVisibility(View.GONE);
+                updateButton.setVisibility(View.VISIBLE);
+                createButton.setVisibility(View.GONE);
             });
             delete.setOnClickListener(v -> {
-                // TODO: delete item using API
+                String url = base_url + "/" + actualPerson.getId();
+                RequestTask task = new RequestTask(url, "DELETE");
+                task.execute();
             });
             return view;
         }
