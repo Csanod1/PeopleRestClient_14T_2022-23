@@ -52,6 +52,18 @@ public class Person {
         this.age = age;
     }
 
+    public String getAgeText() {
+        return String.valueOf(this.age);
+    }
+
+    public void setAgeText(String ageText) {
+        if (ageText.equals("")) {
+            this.age = 0;
+        } else {
+            this.age = Integer.parseInt(ageText);
+        }
+    }
+
     @SuppressLint("DefaultLocale")
     @Override
     public String toString() {

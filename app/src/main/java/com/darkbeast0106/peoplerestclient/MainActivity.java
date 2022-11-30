@@ -14,9 +14,14 @@ import android.view.ViewGroup;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.LinearLayout;
 import android.widget.ListView;
+import android.widget.ProgressBar;
 import android.widget.TextView;
+import android.widget.Toast;
 
+import com.darkbeast0106.peoplerestclient.databinding.ActivityMainBinding;
+import com.darkbeast0106.peoplerestclient.databinding.PersonListItemBinding;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 
@@ -25,12 +30,7 @@ import java.util.Arrays;
 import java.util.List;
 
 public class MainActivity extends AppCompatActivity {
-    private EditText nameInput;
-    private EditText emailInput;
-    private EditText ageInput;
-    private Button submitButton;
-    private TextView peopleTextview;
-    private ListView peopleListView;
+    private ActivityMainBinding binding;
     private String base_url = "https://retoolapi.dev/cRJhEP/people";
 
     private class RequestTask extends AsyncTask<Void, Void, Response> {
@@ -65,7 +65,12 @@ public class MainActivity extends AppCompatActivity {
                     case "POST":
                         response = RequestHandler.post(requestUrl, requestBody);
                         break;
-
+                    case "PUT":
+                        response = RequestHandler.put(requestUrl, requestBody);
+                        break;
+                    case "DELETE":
+                        response = RequestHandler.delete(requestUrl);
+                        break;
                 }
             } catch (IOException e) {
                 e.printStackTrace();
@@ -76,11 +81,21 @@ public class MainActivity extends AppCompatActivity {
         @Override
         protected void onPreExecute() {
             super.onPreExecute();
+            binding.progressBar.setVisibility(View.VISIBLE);
         }
 
         @Override
         protected void onPostExecute(Response response) {
             super.onPostExecute(response);
+            binding.progressBar.setVisibility(View.GONE);
+            if (response == null) {
+                Toast.makeText(MainActivity.this, R.string.unable_to_connect, Toast.LENGTH_SHORT).show();
+                return;
+            }
+            if (response.getResponseCode() >= 400) {
+                Toast.makeText(MainActivity.this, response.getContent(), Toast.LENGTH_SHORT).show();
+                return;
+            }
             switch (requestMethod){
                 case "GET":
                     String content = response.getContent();
@@ -88,10 +103,11 @@ public class MainActivity extends AppCompatActivity {
                     List<Person> people = Arrays.asList(converter.fromJson(content, Person[].class));
                     Log.d("JSON fromJSON: ", people.get(0) + " " + people.get(0).getId());
                     PeopleAdapter adapter = new PeopleAdapter(people);
-                    peopleListView.setAdapter(adapter);
+                    binding.peopleListView.setAdapter(adapter);
                     break;
-                case "POST":
-                    if (response.getResponseCode() == 201) {
+                default:
+                    if (response.getResponseCode() >= 200 && response.getResponseCode() < 300) {
+                        cancelForm();
                         RequestTask task = new RequestTask(base_url);
                         task.execute();
                     }
@@ -103,34 +119,69 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        setContentView(R.layout.activity_main);
-        init();
-        submitButton.setOnClickListener(view -> {
-            String name = nameInput.getText().toString().trim();
-            String email = emailInput.getText().toString().trim();
-            String ageText = ageInput.getText().toString().trim();
-            // TODO: validate
-            int age = Integer.parseInt(ageText);
-            Person person = new Person(0, name, email, age);
-            Gson converter = new GsonBuilder().excludeFieldsWithoutExposeAnnotation().create();
-            String json = converter.toJson(person);
-            Log.d("JSON toJson: ", json);
-            RequestTask task = new RequestTask(base_url, "POST", json);
-            task.execute();
-        });
+        binding = ActivityMainBinding.inflate(getLayoutInflater());
+        binding.setPerson(new Person(0, "", "", 0));
+        setContentView(binding.getRoot());
+        addListeners();
         RequestTask task = new RequestTask(base_url);
         task.execute();
     }
 
-    private void init() {
-        nameInput = findViewById(R.id.nameInput);
-        emailInput = findViewById(R.id.emailInput);
-        ageInput = findViewById(R.id.ageInput);
-        submitButton = findViewById(R.id.submitButton);
-        peopleTextview = findViewById(R.id.textPeople);
-        peopleListView = findViewById(R.id.peopleListView);
-        peopleTextview.setMovementMethod(new ScrollingMovementMethod());
+    private void addListeners() {
+        binding.submitButton.setOnClickListener(view -> {
+            try {
+                String json = createJsonFromFormdata();
+                //Log.d("JSON toJson: ", json);
+                RequestTask task = new RequestTask(base_url, "POST", json);
+                task.execute();
+            } catch (IllegalArgumentException e) {
+                Toast.makeText(this, e.getMessage(), Toast.LENGTH_SHORT).show();
+            }
+        });
+
+        binding.updateButton.setOnClickListener(view -> {
+            try {
+                String json = createJsonFromFormdata();
+                String url = base_url + "/" + binding.getPerson().getId();
+                RequestTask task = new RequestTask(url, "PUT", json);
+                task.execute();
+            } catch (IllegalArgumentException e) {
+                Toast.makeText(this, e.getMessage(), Toast.LENGTH_SHORT).show();
+            }
+        });
+
+        binding.cancelButton.setOnClickListener(view -> {
+            cancelForm();
+        });
+
+        binding.createButton.setOnClickListener(view -> {
+            binding.personForm.setVisibility(View.VISIBLE);
+            binding.submitButton.setVisibility(View.VISIBLE);
+            binding.updateButton.setVisibility(View.GONE);
+            binding.createButton.setVisibility(View.GONE);
+        });
     }
+
+    private String createJsonFromFormdata() {
+        String name = binding.getPerson().getName().trim();
+        String email = binding.getPerson().getEmail().trim();
+        if (name.isEmpty()){
+            throw new IllegalArgumentException("Name is required");
+        }
+        if (email.isEmpty()){
+            throw new IllegalArgumentException("Email is required");
+        }
+        Person person = binding.getPerson();
+        Gson converter = new GsonBuilder().excludeFieldsWithoutExposeAnnotation().create();
+        return converter.toJson(person);
+    }
+
+    private void cancelForm() {
+        binding.setPerson(new Person(0, "", "", 0));
+        binding.personForm.setVisibility(View.GONE);
+        binding.createButton.setVisibility(View.VISIBLE);
+    }
+
 
     private class PeopleAdapter extends ArrayAdapter<Person> {
         private List<Person> people;
@@ -143,20 +194,24 @@ public class MainActivity extends AppCompatActivity {
         @NonNull
         @Override
         public View getView(int position, @Nullable View convertView, @NonNull ViewGroup parent) {
-            LayoutInflater inflater = getLayoutInflater();
-            View view = inflater.inflate(R.layout.person_list_item, null);
+            PersonListItemBinding listItemBinding = PersonListItemBinding.inflate(getLayoutInflater());
             Person actualPerson = people.get(position);
-            TextView display = view.findViewById(R.id.display);
-            TextView update = view.findViewById(R.id.update);
-            TextView delete = view.findViewById(R.id.delete);
-            display.setText(actualPerson.toString());
-            update.setOnClickListener(v -> {
-                // TODO: display update form for item
+            listItemBinding.setPerson(actualPerson);
+
+            listItemBinding.update.setOnClickListener(v -> {
+                binding.setPerson(actualPerson);
+
+                binding.personForm.setVisibility(View.VISIBLE);
+                binding.submitButton.setVisibility(View.GONE);
+                binding.updateButton.setVisibility(View.VISIBLE);
+                binding.createButton.setVisibility(View.GONE);
             });
-            delete.setOnClickListener(v -> {
-                // TODO: delete item using API
+            listItemBinding.delete.setOnClickListener(v -> {
+                String url = base_url + "/" + actualPerson.getId();
+                RequestTask task = new RequestTask(url, "DELETE");
+                task.execute();
             });
-            return view;
+            return listItemBinding.getRoot().getRootView();
         }
     }
 }
